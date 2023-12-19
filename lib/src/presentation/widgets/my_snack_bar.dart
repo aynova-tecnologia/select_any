@@ -187,6 +187,10 @@ class MySnackBar extends StatefulWidget implements SnackBar {
   @override
   // TODO: implement actionOverflowThreshold
   double? get actionOverflowThreshold => throw UnimplementedError();
+  
+  @override
+  // TODO: implement hitTestBehavior
+  HitTestBehavior? get hitTestBehavior => throw UnimplementedError();
 }
 
 class _MySnackBarState extends State<MySnackBar> {
