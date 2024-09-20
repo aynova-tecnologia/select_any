@@ -187,7 +187,7 @@ class MySnackBar extends StatefulWidget implements SnackBar {
   @override
   // TODO: implement actionOverflowThreshold
   double? get actionOverflowThreshold => throw UnimplementedError();
-  
+
   @override
   // TODO: implement hitTestBehavior
   HitTestBehavior? get hitTestBehavior => throw UnimplementedError();
@@ -260,12 +260,10 @@ class _MySnackBarState extends State<MySnackBar> {
         secondary: buttonColor,
         secondaryContainer: colorScheme.onSecondary,
         surface: colorScheme.onSurface,
-        background: themeBackgroundColor,
         error: colorScheme.onError,
         onPrimary: colorScheme.primary,
         onSecondary: colorScheme.secondary,
         onSurface: colorScheme.surface,
-        onBackground: colorScheme.background,
         onError: colorScheme.error,
         brightness: brightness,
       ),
@@ -354,7 +352,7 @@ class _MySnackBarState extends State<MySnackBar> {
     final double elevation = widget.elevation ?? snackBarTheme.elevation ?? 6.0;
     final Color backgroundColor = widget.backgroundColor ??
         snackBarTheme.backgroundColor ??
-        inverseTheme.colorScheme.background;
+        inverseTheme.colorScheme.surface;
     final ShapeBorder? shape = widget.shape ??
         snackBarTheme.shape ??
         (isFloatingSnackBar
