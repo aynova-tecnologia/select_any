@@ -133,9 +133,12 @@ class UtilsFileSelect {
     } else if (Platform.isMacOS) {
       await UtilsPlatform.openProcess('open', args: ['$directoryPath']);
     } else if (UtilsPlatform.isMobile) {
+      // Convertendo o caminho do arquivo para XFile
+      final xFile = XFile(filePath);
+
       // Use share_plus para compartilhar o arquivo
-      await Share.shareFiles(
-        [filePath],
+      await Share.shareXFiles(
+        [xFile], // Passando o XFile na lista
         text: contentExport ?? 'Segue em anexo seu relatório',
       );
     }
