@@ -27,22 +27,24 @@ class MySnackBar extends StatefulWidget implements SnackBar {
   ///
   /// The [content] argument must be non-null. The [elevation] must be null or
   /// non-negative.
-  const MySnackBar(
-      {Key? key,
-      required this.content,
-      this.backgroundColor,
-      this.elevation,
-      this.margin,
-      this.padding,
-      this.width,
-      this.shape,
-      this.behavior,
-      this.action,
-      this.duration = _snackBarDisplayDuration,
-      this.animation,
-      this.onVisible,
-      this.placement})
-      : assert(elevation == null || elevation >= 0.0),
+  const MySnackBar({
+    Key? key,
+    required this.content,
+    this.backgroundColor,
+    this.elevation,
+    this.margin,
+    this.padding,
+    this.width,
+    this.shape,
+    this.behavior,
+    this.action,
+    this.duration = _snackBarDisplayDuration,
+    this.animation,
+    this.onVisible,
+    this.placement,
+    bool? persist,
+  })  : _persist = persist,
+        assert(elevation == null || elevation >= 0.0),
         assert(
           margin == null || behavior == SnackBarBehavior.floating,
           'Margin can only be used with floating behavior',
@@ -55,11 +57,14 @@ class MySnackBar extends StatefulWidget implements SnackBar {
           width == null || margin == null,
           'Width and margin can not be used together',
         ),
-        assert(placement == null || behavior == SnackBarBehavior.floating,
-            'Placement cant use with floating behavior'),
+        assert(
+          placement == null || behavior == SnackBarBehavior.floating,
+          'Placement cant use with floating behavior',
+        ),
         super(key: key);
 
   final SnackPlacement? placement;
+  final bool? _persist;
 
   final Widget content;
   final Color? backgroundColor;
@@ -137,8 +142,9 @@ class MySnackBar extends StatefulWidget implements SnackBar {
   // API for ScaffoldMessengerState.showSnackBar():
 
   /// Creates an animation controller useful for driving a snack bar's entrance and exit animation.
-  static AnimationController createAnimationController(
-      {required TickerProvider vsync}) {
+  static AnimationController createAnimationController({
+    required TickerProvider vsync,
+  }) {
     return AnimationController(
       duration: _snackBarTransitionDuration,
       debugLabel: 'SnackBar',
@@ -166,6 +172,7 @@ class MySnackBar extends StatefulWidget implements SnackBar {
       animation: newAnimation,
       onVisible: onVisible,
       placement: placement,
+      persist: _persist,
     );
   }
 
@@ -185,12 +192,13 @@ class MySnackBar extends StatefulWidget implements SnackBar {
   bool? get showCloseIcon => null;
 
   @override
-  // TODO: implement actionOverflowThreshold
-  double? get actionOverflowThreshold => throw UnimplementedError();
+  double? get actionOverflowThreshold => null;
 
   @override
-  // TODO: implement hitTestBehavior
-  HitTestBehavior? get hitTestBehavior => throw UnimplementedError();
+  HitTestBehavior? get hitTestBehavior => null;
+
+  @override
+  bool get persist => _persist ?? false;
 }
 
 class _MySnackBarState extends State<MySnackBar> {
@@ -247,10 +255,6 @@ class _MySnackBarState extends State<MySnackBar> {
     // the surrounding theme.
     final Brightness brightness =
         isThemeDark ? Brightness.light : Brightness.dark;
-    final Color themeBackgroundColor = isThemeDark
-        ? colorScheme.onSurface
-        : Color.alphaBlend(
-            colorScheme.onSurface.withOpacity(0.80), colorScheme.surface);
     final ThemeData inverseTheme = theme.copyWith(
       colorScheme: ColorScheme(
         primary: colorScheme.onPrimary,
@@ -269,17 +273,20 @@ class _MySnackBarState extends State<MySnackBar> {
       ),
     );
 
-    final TextStyle? contentTextStyle = snackBarTheme.contentTextStyle ??
-        ThemeData(brightness: brightness).textTheme.titleMedium;
+    final TextStyle? contentTextStyle =
+        snackBarTheme.contentTextStyle ??
+            ThemeData(brightness: brightness).textTheme.titleMedium;
     final SnackBarBehavior snackBarBehavior =
         widget.behavior ?? snackBarTheme.behavior ?? SnackBarBehavior.fixed;
     final bool isFloatingSnackBar =
         snackBarBehavior == SnackBarBehavior.floating;
     final double horizontalPadding = isFloatingSnackBar ? 16.0 : 24.0;
-    final EdgeInsetsGeometry padding = widget.padding ??
-        EdgeInsetsDirectional.only(
-            start: horizontalPadding,
-            end: widget.action != null ? 0 : horizontalPadding);
+    final EdgeInsetsGeometry padding =
+        widget.padding ??
+            EdgeInsetsDirectional.only(
+              start: horizontalPadding,
+              end: widget.action != null ? 0 : horizontalPadding,
+            );
 
     final double actionHorizontalMargin =
         (widget.padding?.resolve(TextDirection.ltr).right ??
@@ -307,7 +314,8 @@ class _MySnackBarState extends State<MySnackBar> {
                   fit: FlexFit.loose,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                        vertical: _singleLineVerticalPadding),
+                      vertical: _singleLineVerticalPadding,
+                    ),
                     child: DefaultTextStyle(
                       style: contentTextStyle!,
                       child: widget.content,
@@ -317,7 +325,8 @@ class _MySnackBarState extends State<MySnackBar> {
               : Expanded(
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                        vertical: _singleLineVerticalPadding),
+                      vertical: _singleLineVerticalPadding,
+                    ),
                     child: DefaultTextStyle(
                       style: contentTextStyle!,
                       child: widget.content,
@@ -331,8 +340,9 @@ class _MySnackBarState extends State<MySnackBar> {
                 data: TextButtonThemeData(
                   style: TextButton.styleFrom(
                     foregroundColor: buttonColor,
-                    padding:
-                        EdgeInsets.symmetric(horizontal: horizontalPadding),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: horizontalPadding,
+                    ),
                   ),
                 ),
                 child: widget.action!,
@@ -350,14 +360,18 @@ class _MySnackBarState extends State<MySnackBar> {
     }
 
     final double elevation = widget.elevation ?? snackBarTheme.elevation ?? 6.0;
-    final Color backgroundColor = widget.backgroundColor ??
-        snackBarTheme.backgroundColor ??
-        inverseTheme.colorScheme.surface;
-    final ShapeBorder? shape = widget.shape ??
-        snackBarTheme.shape ??
-        (isFloatingSnackBar
-            ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(4.0))
-            : null);
+    final Color backgroundColor =
+        widget.backgroundColor ??
+            snackBarTheme.backgroundColor ??
+            inverseTheme.colorScheme.surface;
+    final ShapeBorder? shape =
+        widget.shape ??
+            snackBarTheme.shape ??
+            (isFloatingSnackBar
+                ? RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4.0),
+                )
+                : null);
 
     snackBar = Material(
       shape: shape,
@@ -392,21 +406,23 @@ class _MySnackBarState extends State<MySnackBar> {
             Flexible(
               fit: FlexFit.loose,
               child: Padding(
-                  padding: widget.margin ??
-                      const EdgeInsets.fromLTRB(
-                        horizontalMargin,
-                        topMargin,
-                        horizontalMargin,
-                        bottomMargin,
-                      ),
-                  child: snackBar),
-            )
+                padding:
+                    widget.margin ??
+                    const EdgeInsets.fromLTRB(
+                      horizontalMargin,
+                      topMargin,
+                      horizontalMargin,
+                      bottomMargin,
+                    ),
+                child: snackBar,
+              ),
+            ),
           ],
           mainAxisAlignment: widget.placement == SnackPlacement.CENTER
               ? MainAxisAlignment.center
               : widget.placement == SnackPlacement.RIGHT
-                  ? MainAxisAlignment.end
-                  : MainAxisAlignment.start,
+              ? MainAxisAlignment.end
+              : MainAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
         );
       }
@@ -421,16 +437,18 @@ class _MySnackBarState extends State<MySnackBar> {
       container: true,
       liveRegion: true,
       onDismiss: () {
-        ScaffoldMessenger.of(context)
-            .removeCurrentSnackBar(reason: SnackBarClosedReason.dismiss);
+        ScaffoldMessenger.of(
+          context,
+        ).removeCurrentSnackBar(reason: SnackBarClosedReason.dismiss);
       },
       child: Dismissible(
         key: const Key('dismissible'),
         direction: DismissDirection.down,
         resizeDuration: null,
         onDismissed: (DismissDirection direction) {
-          ScaffoldMessenger.of(context)
-              .removeCurrentSnackBar(reason: SnackBarClosedReason.swipe);
+          ScaffoldMessenger.of(
+            context,
+          ).removeCurrentSnackBar(reason: SnackBarClosedReason.swipe);
         },
         child: snackBar,
       ),
