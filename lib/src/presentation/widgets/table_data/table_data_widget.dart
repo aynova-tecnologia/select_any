@@ -585,19 +585,19 @@ class TableDataWidget extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             total > 0
-                                ? SizedBox(
-                                    /// TODO Implementar abordagem com Flexiveis
-                                    width: 30 +
-                                        ((controller.total.toString().length) *
-                                                12)
-                                            .toDouble(),
+                                ? ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      minWidth: 96,
+                                      maxWidth: 160,
+                                    ),
                                     child: Observer(builder: (_) {
                                       return DropdownButtonFormField<int>(
+                                          isExpanded: true,
                                           decoration: const InputDecoration(
                                               border: InputBorder.none,
                                               contentPadding:
-                                                  const EdgeInsets.all(0)),
-                                          icon: SizedBox(),
+                                                  EdgeInsets.all(0)),
+                                          icon: const SizedBox(),
                                           style: controller.selectModel!.theme
                                                   .defaultTextStyle ??
                                               TextStyle(
@@ -617,6 +617,7 @@ class TableDataWidget extends StatelessWidget {
                                                   value: index + 1,
                                                   child: Text(
                                                       '${(controller.quantityItensPage * index) + 1}-${controller.quantityItensPage * (index + 1)}',
+                                                      overflow: TextOverflow.ellipsis,
                                                       style: controller
                                                           .selectModel!
                                                           .theme
