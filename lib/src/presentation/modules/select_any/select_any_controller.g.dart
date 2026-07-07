@@ -6,7 +6,7 @@ part of 'select_any_controller.dart';
 // StoreGenerator
 // **************************************************************************
 
-// ignore_for_file: non_constant_identifier_names, unnecessary_brace_in_string_interps, unnecessary_lambdas, prefer_expression_function_bodies, lines_longer_than_80_chars, avoid_as, avoid_annotating_with_dynamic
+// ignore_for_file: non_constant_identifier_names, unnecessary_brace_in_string_interps, unnecessary_lambdas, prefer_expression_function_bodies, lines_longer_than_80_chars, avoid_as, avoid_annotating_with_dynamic, no_leading_underscores_for_local_identifiers
 
 mixin _$SelectAnyController on _SelectAnyBase, Store {
   Computed<ObservableList<ItemSelectTable>>? _$showListComputed;
@@ -17,7 +17,8 @@ mixin _$SelectAnyController on _SelectAnyBase, Store {
               name: '_SelectAnyBase.showList'))
       .value;
 
-  final _$typeDiplayAtom = Atom(name: '_SelectAnyBase.typeDiplay');
+  late final _$typeDiplayAtom =
+      Atom(name: '_SelectAnyBase.typeDiplay', context: context);
 
   @override
   int get typeDiplay {
@@ -32,7 +33,8 @@ mixin _$SelectAnyController on _SelectAnyBase, Store {
     });
   }
 
-  final _$searchTextAtom = Atom(name: '_SelectAnyBase.searchText');
+  late final _$searchTextAtom =
+      Atom(name: '_SelectAnyBase.searchText', context: context);
 
   @override
   String get searchText {
@@ -47,7 +49,8 @@ mixin _$SelectAnyController on _SelectAnyBase, Store {
     });
   }
 
-  final _$searchIconAtom = Atom(name: '_SelectAnyBase.searchIcon');
+  late final _$searchIconAtom =
+      Atom(name: '_SelectAnyBase.searchIcon', context: context);
 
   @override
   Icon get searchIcon {
@@ -62,7 +65,8 @@ mixin _$SelectAnyController on _SelectAnyBase, Store {
     });
   }
 
-  final _$appBarTitleAtom = Atom(name: '_SelectAnyBase.appBarTitle');
+  late final _$appBarTitleAtom =
+      Atom(name: '_SelectAnyBase.appBarTitle', context: context);
 
   @override
   Widget? get appBarTitle {
@@ -77,8 +81,8 @@ mixin _$SelectAnyController on _SelectAnyBase, Store {
     });
   }
 
-  final _$confirmToLoadDataAtom =
-      Atom(name: '_SelectAnyBase.confirmToLoadData');
+  late final _$confirmToLoadDataAtom =
+      Atom(name: '_SelectAnyBase.confirmToLoadData', context: context);
 
   @override
   bool get confirmToLoadData {
@@ -93,7 +97,7 @@ mixin _$SelectAnyController on _SelectAnyBase, Store {
     });
   }
 
-  final _$pageAtom = Atom(name: '_SelectAnyBase.page');
+  late final _$pageAtom = Atom(name: '_SelectAnyBase.page', context: context);
 
   @override
   int get page {
@@ -108,7 +112,7 @@ mixin _$SelectAnyController on _SelectAnyBase, Store {
     });
   }
 
-  final _$totalAtom = Atom(name: '_SelectAnyBase.total');
+  late final _$totalAtom = Atom(name: '_SelectAnyBase.total', context: context);
 
   @override
   int get total {
@@ -123,7 +127,7 @@ mixin _$SelectAnyController on _SelectAnyBase, Store {
     });
   }
 
-  final _$listAtom = Atom(name: '_SelectAnyBase.list');
+  late final _$listAtom = Atom(name: '_SelectAnyBase.list', context: context);
 
   @override
   ObservableList<ItemSelectTable> get list {
@@ -138,7 +142,8 @@ mixin _$SelectAnyController on _SelectAnyBase, Store {
     });
   }
 
-  final _$loadingAtom = Atom(name: '_SelectAnyBase.loading');
+  late final _$loadingAtom =
+      Atom(name: '_SelectAnyBase.loading', context: context);
 
   @override
   bool get loading {
@@ -153,7 +158,8 @@ mixin _$SelectAnyController on _SelectAnyBase, Store {
     });
   }
 
-  final _$loadedAtom = Atom(name: '_SelectAnyBase.loaded');
+  late final _$loadedAtom =
+      Atom(name: '_SelectAnyBase.loaded', context: context);
 
   @override
   bool get loaded {
@@ -168,8 +174,8 @@ mixin _$SelectAnyController on _SelectAnyBase, Store {
     });
   }
 
-  final _$quantityItensPageAtom =
-      Atom(name: '_SelectAnyBase.quantityItensPage');
+  late final _$quantityItensPageAtom =
+      Atom(name: '_SelectAnyBase.quantityItensPage', context: context);
 
   @override
   int get quantityItensPage {
@@ -184,7 +190,8 @@ mixin _$SelectAnyController on _SelectAnyBase, Store {
     });
   }
 
-  final _$loadingMoreAtom = Atom(name: '_SelectAnyBase.loadingMore');
+  late final _$loadingMoreAtom =
+      Atom(name: '_SelectAnyBase.loadingMore', context: context);
 
   @override
   bool get loadingMore {
@@ -199,7 +206,24 @@ mixin _$SelectAnyController on _SelectAnyBase, Store {
     });
   }
 
-  final _$showSearchAtom = Atom(name: '_SelectAnyBase.showSearch');
+  late final _$isShowingCachedDataAtom =
+      Atom(name: '_SelectAnyBase.isShowingCachedData', context: context);
+
+  @override
+  bool get isShowingCachedData {
+    _$isShowingCachedDataAtom.reportRead();
+    return super.isShowingCachedData;
+  }
+
+  @override
+  set isShowingCachedData(bool value) {
+    _$isShowingCachedDataAtom.reportWrite(value, super.isShowingCachedData, () {
+      super.isShowingCachedData = value;
+    });
+  }
+
+  late final _$showSearchAtom =
+      Atom(name: '_SelectAnyBase.showSearch', context: context);
 
   @override
   bool get showSearch {
@@ -214,7 +238,8 @@ mixin _$SelectAnyController on _SelectAnyBase, Store {
     });
   }
 
-  final _$actualFiltersAtom = Atom(name: '_SelectAnyBase.actualFilters');
+  late final _$actualFiltersAtom =
+      Atom(name: '_SelectAnyBase.actualFilters', context: context);
 
   @override
   GroupFilterExp? get actualFilters {
@@ -244,6 +269,7 @@ loading: ${loading},
 loaded: ${loaded},
 quantityItensPage: ${quantityItensPage},
 loadingMore: ${loadingMore},
+isShowingCachedData: ${isShowingCachedData},
 showSearch: ${showSearch},
 actualFilters: ${actualFilters},
 showList: ${showList}

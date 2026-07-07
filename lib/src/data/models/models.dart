@@ -70,6 +70,9 @@ class SelectModel {
   /// caso true, não carrega os dados automaticamente, exibindo um botão na tela para fazer isso
   bool confirmToLoadData;
 
+  /// Exibe o botão de atualizar no componente, próximo da pesquisa
+  bool showRefreshButton;
+
   /// Indica se o botão de selecionar todos ficará visível ou não
   bool? allowSelectAll;
 
@@ -110,6 +113,7 @@ class SelectModel {
       this.openSearchAutomatically,
       this.preSelected,
       this.confirmToLoadData = false,
+      this.showRefreshButton = false,
       this.allowSelectAll,
       this.showFiltersInput = true,
       this.theme = const SelectModelTheme(tableTheme: SelectModelThemeTable()),

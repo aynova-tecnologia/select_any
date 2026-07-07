@@ -188,6 +188,8 @@ class _SelectAnyPageState extends State<SelectAnyPage> {
                                     showDialogSorts(context);
                                   },
                                   icon: Icon(Icons.sort)),
+                              if (_buildRefreshButton() != null)
+                                _buildRefreshButton()!,
                               IconButton(
                                 splashRadius: 24,
                                 icon: widget.controller!.searchIcon,
@@ -301,10 +303,58 @@ class _SelectAnyPageState extends State<SelectAnyPage> {
     });
   }
 
+  Widget _buildListStatusBar() {
+    return Observer(builder: (_) {
+      final int shown = widget.controller!.showList.length;
+      final int total = widget.controller!.total;
+      final String countLabel = total > 0
+          ? 'Exibindo $shown de $total registros'
+          : 'Exibindo $shown registros';
+      final bool isDark = Theme.of(context).brightness == Brightness.dark;
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Flexible(
+              child: Text(countLabel,
+                  style: Theme.of(context).textTheme.bodySmall,
+                  overflow: TextOverflow.ellipsis),
+            ),
+            if (widget.controller!.isShowingCachedData)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.cloud_off, size: 14, color: Colors.orange),
+                  const SizedBox(width: 4),
+                  Text('Dados offline',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: Colors.orange)),
+                ],
+              ),
+          ],
+        ),
+      );
+    });
+  }
+
   Widget _getListBuilder() {
     return Observer(builder: (_) {
-      if (widget.controller!.loading == true) {
-        return new Center(child: new RefreshProgressIndicator());
+      /// Só exibe o skeleton de tela cheia no primeiro carregamento (sem
+      /// dados ainda em tela). Quando já existem itens carregados (refresh
+      /// ou paginação via scroll), mantém a lista atual visível — evitando
+      /// que a tela "pisque" e o scroll volte para o topo — e sinaliza o
+      /// carregamento apenas com um spinner (ver rodapé da lista).
+      if (widget.controller!.loading == true &&
+          widget.controller!.list.isEmpty) {
+        if (!widget.controller!.showLoadingSkeleton) {
+          return const SizedBox();
+        }
+        return _buildListSkeleton();
       }
       if (widget.controller!.error != null) {
         if (widget._selectModel!.alternativeDataSource != null &&
@@ -336,6 +386,8 @@ class _SelectAnyPageState extends State<SelectAnyPage> {
         else {
           return Column(
             children: [
+              if (widget.controller!.actualDataSource!.supportPaginate)
+                _buildListStatusBar(),
               Expanded(
                 child: RefreshIndicator(
                   onRefresh: () async {
@@ -347,8 +399,15 @@ class _SelectAnyPageState extends State<SelectAnyPage> {
                         /// não é necessário nenhuma ação caso não suporte paginação, pois os dados já estaram completos na tela
                         if (widget
                             .controller!.actualDataSource!.supportPaginate) {
+                          /// Dispara a busca da próxima página um pouco antes do fim da lista
+                          /// (aproximadamente duas telas de antecedência), para que o conteúdo
+                          /// já esteja carregado quando o usuário chegar lá.
+                          final double prefetchThreshold =
+                              scrollInfo.metrics.viewportDimension * 2;
                           if (scrollInfo is ScrollEndNotification &&
-                              scrollInfo.metrics.extentAfter == 0) {
+                              scrollInfo.metrics.extentAfter <
+                                  prefetchThreshold &&
+                              !widget.controller!.loadingMore) {
                             if (widget.controller!.total == 0 ||
                                 widget.controller!.page *
                                         widget.controller!.quantityItensPage <=
@@ -373,17 +432,25 @@ class _SelectAnyPageState extends State<SelectAnyPage> {
                         }
                         return true;
                       },
-                      child: ListView.builder(
-                          itemCount: widget.controller!.showList.length,
-                          itemBuilder: (context, index) {
-                            return Observer(
-                                builder: (_) => _getItemList(
-                                    widget.controller!.showList[index], index));
-                          })),
+                      child: Scrollbar(
+                        thumbVisibility: true,
+                        child: ListView.builder(
+                            itemCount: widget.controller!.showList.length,
+                            itemBuilder: (context, index) {
+                              return Observer(
+                                  builder: (_) => _getItemList(
+                                      widget.controller!.showList[index],
+                                      index));
+                            }),
+                      )),
                 ),
               ),
               Observer(builder: (_) {
-                if (widget.controller!.loadingMore) {
+                /// Cobre tanto o "carregar mais" via scroll quanto um
+                /// refresh em andamento com dados já em tela (nesse caso
+                /// não há skeleton de tela cheia, ver `_getListBuilder`).
+                if (widget.controller!.loadingMore ||
+                    widget.controller!.loading) {
                   return Padding(
                     padding: const EdgeInsets.all(8.0),
                     child: CircularProgressIndicator(),
@@ -440,6 +507,113 @@ class _SelectAnyPageState extends State<SelectAnyPage> {
         widget.controller!.filterChanged(reload: true);
       }
     }
+  }
+
+  Widget _buildListSkeleton() {
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: 6,
+      separatorBuilder: (_, __) => widget._selectModel!.showInCards == true
+          ? const SizedBox(height: 0)
+          : const Divider(height: 1),
+      itemBuilder: (_, __) => widget._selectModel!.showInCards == true
+          ? _buildSkeletonCardItem()
+          : _buildSkeletonListTileItem(),
+    );
+  }
+
+  Widget _buildSkeletonCardItem() {
+    final Color baseColor =
+        Theme.of(context).dividerColor.withValues(alpha: 0.18);
+    final Color highlightColor =
+        Theme.of(context).dividerColor.withValues(alpha: 0.10);
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: _buildSkeletonTextLines(
+            lineCount: widget._selectModel!.lines.length.clamp(2, 5),
+            baseColor: baseColor,
+            highlightColor: highlightColor,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSkeletonListTileItem() {
+    final Color baseColor =
+        Theme.of(context).dividerColor.withValues(alpha: 0.18);
+    final Color highlightColor =
+        Theme.of(context).dividerColor.withValues(alpha: 0.10);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+      child: ListTile(
+        leading: widget._selectModel!.typeSelect == TypeSelect.MULTIPLE
+            ? Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: baseColor,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              )
+            : null,
+        title: _buildSkeletonLine(
+          width: 160,
+          color: baseColor,
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: _buildSkeletonTextLines(
+            lineCount: (widget._selectModel!.lines.length - 1).clamp(1, 3),
+            baseColor: highlightColor,
+            highlightColor: highlightColor,
+            topSpacing: 10,
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildSkeletonTextLines({
+    required int lineCount,
+    required Color baseColor,
+    required Color highlightColor,
+    double topSpacing = 12,
+  }) {
+    final List<double> widths = <double>[160, double.infinity, 220, 180, 140];
+    final List<Widget> widgets = <Widget>[];
+    for (int index = 0; index < lineCount; index++) {
+      if (index > 0) {
+        widgets.add(SizedBox(height: index == 1 ? topSpacing : 8));
+      }
+      widgets.add(_buildSkeletonLine(
+        width: widths[index.clamp(0, widths.length - 1)],
+        color: index == 0 ? baseColor : highlightColor,
+      ));
+    }
+    return widgets;
+  }
+
+  Widget _buildSkeletonLine({
+    required double width,
+    required Color color,
+    double height = 14,
+  }) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(6),
+        ),
+      ),
+    );
   }
 
   Widget _getItemList(ItemSelect itemSelect, int index) {
@@ -604,6 +778,20 @@ class _SelectAnyPageState extends State<SelectAnyPage> {
     }
     widgets = widgets.reversed.toList();
     return widgets;
+  }
+
+  Widget? _buildRefreshButton() {
+    if (widget._selectModel!.showRefreshButton != true) {
+      return null;
+    }
+    return IconButton(
+      splashRadius: 24,
+      tooltip: 'Atualizar',
+      icon: const Icon(Icons.refresh),
+      onPressed: () {
+        widget.controller!.reloadData();
+      },
+    );
   }
 
   void carregarDados() async {

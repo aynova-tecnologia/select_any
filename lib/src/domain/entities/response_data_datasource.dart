@@ -13,11 +13,16 @@ class ResponseDataDataSource {
   /// Por ex: 1-10
   int start;
   int end;
+
+  /// Indica se os dados retornados vieram de um cache local (ex: sem conexão)
+  /// ao invés de uma busca online mais recente
+  bool fromCache;
   ResponseDataDataSource(
       {this.exception,
       required this.data,
       this.total,
       this.filter,
       required this.start,
-      required this.end});
+      required this.end,
+      this.fromCache = false});
 }
