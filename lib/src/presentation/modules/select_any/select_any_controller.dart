@@ -1,3 +1,5 @@
+import 'dart:async';
+
 // ignore_for_file: unused_element
 
 import 'package:collection/collection.dart';
@@ -10,6 +12,15 @@ import 'package:select_any/src/presentation/widgets/select_range_date/select_ran
 
 part 'select_any_controller.g.dart';
 
+const int _displayModeList = 1;
+const int _displayModeTable = 2;
+const int _firstPage = 1;
+const int _noPaginationOffset = -1;
+const int _initialPaginatedOffset = 0;
+const int _defaultColumnFilterDebounceMs = 800;
+const int _minColumnFilterDebounceMs = 700;
+const int _maxColumnFilterDebounceMs = 1600;
+
 class SelectAnyController = _SelectAnyBase with _$SelectAnyController;
 
 abstract class _SelectAnyBase with Store {
@@ -17,7 +28,8 @@ abstract class _SelectAnyBase with Store {
   @observable
 
   /// 1 = List, 2 = Table
-  int typeDiplay = UtilsPlatform.isMobile ? 1 : 2;
+  int typeDiplay =
+      UtilsPlatform.isMobile ? _displayModeList : _displayModeTable;
   @observable
   String searchText = "";
   String? title;
@@ -41,7 +53,7 @@ abstract class _SelectAnyBase with Store {
 
   SelectModel? selectModel;
   @observable
-  int page = 1;
+  int page = _firstPage;
   @observable
   int total = 0;
   @observable
@@ -98,6 +110,8 @@ abstract class _SelectAnyBase with Store {
   GroupFilterExp? actualFilters;
 
   bool _hasSearchedAlready = false;
+  Timer? _columnFilterDebounce;
+  int _columnFilterSequence = 0;
 
   bool get showLoadingSkeleton => _showLoadingSkeleton;
   bool get isRefreshing => _isRefreshing;
@@ -135,6 +149,7 @@ abstract class _SelectAnyBase with Store {
   }
 
   void dispose() {
+    _columnFilterDebounce?.cancel();
     list.clear();
     filter.clear();
     searchText = '';
@@ -146,6 +161,20 @@ abstract class _SelectAnyBase with Store {
     _showLoadingSkeleton = true;
     _skipIfUnchangedResults = false;
     _isRefreshing = false;
+  }
+
+  /// Versão leve de [dispose], usada quando este controller pertence a quem
+  /// abriu a página (ex: um controller de lista mantido vivo num controller
+  /// de tela pai, reaproveitado entre navegações) — a página que está
+  /// fechando não é dona dos dados carregados, então não faz sentido jogar
+  /// fora `loaded`/`list`/cache do data source só porque o usuário navegou
+  /// pra fora: isso forçava uma consulta nova completa à API toda vez que a
+  /// tela era reaberta, mesmo segundos depois de já ter carregado os dados
+  /// (ver investigação de lentidão/redraw excessivo nas listas de
+  /// movimentação do Timber Track). Só cancela o timer interno de debounce,
+  /// que é de fato específico dessa instância de página.
+  void disposeApenasTimers() {
+    _columnFilterDebounce?.cancel();
   }
 
   void setDataSource({
@@ -275,8 +304,8 @@ abstract class _SelectAnyBase with Store {
       /// No mobile o refresh sempre busca a primeira página (ver [getOffSet]),
       /// então a página armazenada precisa ser realinhada para não pular
       /// páginas na próxima vez que o scroll infinito buscar mais dados.
-      if (typeDiplay == 1) {
-        page = 1;
+      if (typeDiplay == _displayModeList) {
+        page = _firstPage;
       }
       setCorretDataSource(
         offset: getOffSet,
@@ -297,7 +326,9 @@ abstract class _SelectAnyBase with Store {
     --total;
   }
 
-  int get getOffSet => typeDiplay == 1 ? -1 : (page - 1) * quantityItensPage;
+  int get getOffSet => typeDiplay == _displayModeList
+      ? _noPaginationOffset
+      : (page - _firstPage) * quantityItensPage;
 
   void export(BuildContext context) {
     showDialog(
@@ -331,8 +362,12 @@ abstract class _SelectAnyBase with Store {
       if (searchText.isEmpty) {
         if (!confirmToLoadData) {
           list.clear();
-          page = 1;
-          setDataSource(offset: typeDiplay == 1 ? -1 : 0);
+          page = _firstPage;
+          setDataSource(
+            offset: typeDiplay == _displayModeList
+                ? _noPaginationOffset
+                : _initialPaginatedOffset,
+          );
         }
       } else {
         /// Usa para guardar o valor original
@@ -344,13 +379,13 @@ abstract class _SelectAnyBase with Store {
           /// Só executa a pesquisa se o input não tiver mudado e já não tenha sido executada
           if (tempSearchText == filter.text.trim() && !_hasSearchedAlready) {
             list.clear();
-            page = 1;
+            page = _firstPage;
             setDataSourceSearch(
                 offset: selectModel!.dataSource.supportPaginate
                     ? null
-                    : typeDiplay == 1
-                        ? -1
-                        : 0);
+                    : typeDiplay == _displayModeList
+                        ? _noPaginationOffset
+                        : _initialPaginatedOffset);
             // Altera para true após fazer a pesquisa evitando que seja feita novamente caso o [onSubmittedSearch] seja chamado e
             //não tenha sido mudado o input [filter.text].
             _hasSearchedAlready = true;
@@ -366,13 +401,13 @@ abstract class _SelectAnyBase with Store {
     if (!_hasSearchedAlready) {
       searchText = filter.text.trim();
       list.clear();
-      page = 1;
+      page = _firstPage;
       setDataSourceSearch(
           offset: selectModel!.dataSource.supportPaginate
               ? null
-              : typeDiplay == 1
-                  ? -1
-                  : 0);
+              : typeDiplay == _displayModeList
+                  ? _noPaginationOffset
+                  : _initialPaginatedOffset);
       // Altera para true após fazer a pesquisa evitando que seja feita novamente caso o [filterChanged]
       //tente fazer a pesquisa após o delay.
       _hasSearchedAlready = true;
@@ -381,7 +416,7 @@ abstract class _SelectAnyBase with Store {
 
   updateTypeSearch(TypeSearch? newType) {
     if (newType != null && newType != typeSearch) {
-      page = 1;
+      page = _firstPage;
       typeSearch = newType;
       if (filter.text.trim().isNotEmpty) {
         filterChanged(reload: true);
@@ -477,14 +512,43 @@ abstract class _SelectAnyBase with Store {
   }
 
   onColumnFilterChanged() {
+    _columnFilterDebounce?.cancel();
+    _invalidateActiveRequests();
     resetOnFiltersChanged();
-    setCorretDataSource(offset: getOffSet);
+    final int debounceMilliseconds =
+        (((actualDataSource ?? selectModel?.dataSource)?.searchDelay ??
+                    _defaultColumnFilterDebounceMs) *
+                2)
+            .clamp(
+      _minColumnFilterDebounceMs,
+      _maxColumnFilterDebounceMs,
+    );
+    final int sequence = ++_columnFilterSequence;
+
+    /// Limpa os resultados atuais para não manter uma tabela antiga visível
+    /// enquanto o usuário ainda está digitando o novo filtro da coluna.
+    _columnFilterDebounce = Timer(
+      Duration(milliseconds: debounceMilliseconds),
+      () {
+        if (sequence != _columnFilterSequence) {
+          return;
+        }
+        list.clear();
+        total = 0;
+        loaded = false;
+        _showLoadingSkeleton = true;
+        setCorretDataSource(
+          offset: getOffSet,
+          skipIfUnchanged: true,
+        );
+      },
+    );
   }
 
   /// Limpa o texto da barra de pesquisa e zera a pagina
   resetOnFiltersChanged() {
-    if (page != 1) {
-      page = 1;
+    if (page != _firstPage) {
+      page = _firstPage;
     }
     filter.clear();
   }
@@ -548,6 +612,13 @@ abstract class _SelectAnyBase with Store {
   }
 
   bool _isCurrentRequest(int requestId) => requestId == _requestId;
+
+  void _invalidateActiveRequests() {
+    _requestId++;
+    loading = false;
+    loadingMore = false;
+    _isRefreshing = false;
+  }
 
   void _finishRequest({bool keepLoading = false}) {
     if (!keepLoading) {

@@ -27,12 +27,21 @@ class SelectAnyPage extends StatefulWidget {
   SelectAnyController? controller;
   late bool _showBackButton;
 
+  /// Indica se [controller] foi passado por quem criou esta página (ex: um
+  /// controller mantido vivo num controller de tela pai, reaproveitado
+  /// entre navegações) — nesse caso a página não é dona dos dados
+  /// carregados e não deve descartá-los ao fechar (ver [dispose] em
+  /// [_SelectAnyPageState]). Calculado antes do controller nulo ser
+  /// substituído por uma instância própria logo abaixo.
+  late final bool _controladoExternamente;
+
   SelectAnyPage(
     this._selectModel, {
     this.data,
     this.controller,
     bool? showBackButton,
   }) {
+    _controladoExternamente = controller != null;
     if (controller == null) {
       controller = SelectAnyController();
     }
@@ -63,7 +72,11 @@ class _SelectAnyPageState extends State<SelectAnyPage> {
 
   @override
   void dispose() {
-    widget.controller!.dispose();
+    if (widget._controladoExternamente) {
+      widget.controller!.disposeApenasTimers();
+    } else {
+      widget.controller!.dispose();
+    }
 
     /// Caso a pesquisa esteja ativa, desativa ela
     if (widget.controller!.searchIcon.icon == Icons.close) {
