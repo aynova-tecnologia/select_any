@@ -65,6 +65,11 @@ class _SelectAnyPageState extends State<SelectAnyPage> {
   bool fonteAlternativa = false;
   BuildContext? buildContext;
 
+  /// Garante no máximo 1 refresh silencioso por abertura desta página,
+  /// mesmo que [carregarDados] rode de novo em rebuilds (ex.: troca de
+  /// orientação/tamanho de tela). Ver uso em [carregarDados].
+  bool _refreshedReusedControllerOnOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -822,7 +827,20 @@ class _SelectAnyPageState extends State<SelectAnyPage> {
       widget.controller!
           .setDataSource(offset: widget.controller!.typeDiplay == 1 ? -1 : 0);
       widget.controller!.loaded = true;
+    } else if (widget._controladoExternamente &&
+        !_refreshedReusedControllerOnOpen) {
+      /// Controller reaproveitado (dono é um controller de tela pai) que já
+      /// tinha `loaded = true` de uma abertura anterior desta MESMA sessão:
+      /// como o [dispose] "leve" (ver [SelectAnyController.disposeApenasTimers])
+      /// não zera `loaded`, sem isto a lista ficava travada no snapshot da
+      /// primeira abertura pelo resto da sessão — usuário só via dados novos
+      /// fechando e reabrindo o app inteiro. Atualiza em segundo plano
+      /// (silent + skipIfUnchanged), sem bloquear a tela nem descartar o que
+      /// já está visível, igual ao refresh periódico de 5 min já usado em
+      /// outras listas.
+      widget.controller!.reloadData(silent: true, skipIfUnchanged: true);
     }
+    _refreshedReusedControllerOnOpen = true;
     if (widget._selectModel!.openSearchAutomatically == true) {
       _searchPressed();
     }
