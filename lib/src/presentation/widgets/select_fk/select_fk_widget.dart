@@ -140,6 +140,16 @@ class SelectFKWidget extends StatelessWidget {
           buttons: buttons,
           showInCards: showInCards,
           theme: theme ?? SelectModelTheme());
+    } else {
+      /// O SelectModel vive no controller, que sobrevive a todo rebuild — este
+      /// widget é StatelessWidget e é reconstruído com valores novos sempre que
+      /// a tela que o contém muda de estado. Sem sincronizar aqui, `title` e
+      /// `lines` ficariam congelados nos da primeira montagem, e é deles que
+      /// [SelectAnyPage] tira o título da AppBar e as colunas da listagem: um
+      /// seletor cujo rótulo depende de um checkbox mostrava o rótulo certo no
+      /// input (lido no build) e o rótulo antigo na tela de seleção.
+      controller.selectModel!.title = customListTitle ?? title;
+      controller.selectModel!.lines = lines;
     }
     if (isRequired) {
       controller.checkSingleRow();
