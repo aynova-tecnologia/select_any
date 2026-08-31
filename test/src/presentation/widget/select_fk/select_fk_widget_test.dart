@@ -284,4 +284,101 @@ void main() {
     await tester.pump();
     expect(ctlSelect.obj, data[2]);
   });
+
+  /// O SelectModel vive no controller e sobrevive ao rebuild do widget. Quem
+  /// consome ele e a tela de listagem: SelectAnyPage tira dai o titulo da
+  /// AppBar (`init(_selectModel.title, ...)`) e as colunas exibidas.
+  group('SelectModel acompanha o rebuild do widget', () {
+    testWidgets('titulo novo chega ao SelectModel que a listagem consome',
+        (tester) async {
+      SelectFKController ctlSelect = SelectFKController();
+
+      await tester.pumpWidget(MaterialApp(
+        home: Material(
+          child: SelectFKWidget(
+              'Placa Julieta', 'id', [Line('key')], ctlSelect, dataSource),
+        ),
+      ));
+      expect(ctlSelect.selectModel!.title, 'Placa Julieta');
+
+      await tester.pumpWidget(MaterialApp(
+        home: Material(
+          child: SelectFKWidget(
+              'Placa Bitrem', 'id', [Line('key')], ctlSelect, dataSource),
+        ),
+      ));
+
+      expect(ctlSelect.selectModel!.title, 'Placa Bitrem');
+      expect(find.text('Placa Bitrem'), findsOneWidget);
+    });
+
+    testWidgets('customListTitle continua tendo precedencia sobre o title',
+        (tester) async {
+      SelectFKController ctlSelect = SelectFKController();
+
+      await tester.pumpWidget(MaterialApp(
+        home: Material(
+          child: SelectFKWidget(
+              'title', 'id', [Line('key')], ctlSelect, dataSource,
+              customListTitle: 'Titulo da listagem'),
+        ),
+      ));
+      expect(ctlSelect.selectModel!.title, 'Titulo da listagem');
+
+      await tester.pumpWidget(MaterialApp(
+        home: Material(
+          child: SelectFKWidget(
+              'outro title', 'id', [Line('key')], ctlSelect, dataSource,
+              customListTitle: 'Outro titulo da listagem'),
+        ),
+      ));
+
+      expect(ctlSelect.selectModel!.title, 'Outro titulo da listagem');
+    });
+
+    testWidgets('colunas novas chegam ao SelectModel', (tester) async {
+      SelectFKController ctlSelect = SelectFKController();
+
+      await tester.pumpWidget(MaterialApp(
+        home: Material(
+          child: SelectFKWidget(
+              'title', 'id', [Line('key')], ctlSelect, dataSource),
+        ),
+      ));
+      expect(ctlSelect.selectModel!.lines.map((linha) => linha.key), ['key']);
+
+      await tester.pumpWidget(MaterialApp(
+        home: Material(
+          child: SelectFKWidget('title', 'id', [Line('key'), Line('id')],
+              ctlSelect, dataSource),
+        ),
+      ));
+
+      expect(
+          ctlSelect.selectModel!.lines.map((linha) => linha.key), ['key', 'id']);
+    });
+
+    testWidgets('o valor ja selecionado sobrevive ao rebuild', (tester) async {
+      SelectFKController ctlSelect = SelectFKController();
+
+      await tester.pumpWidget(MaterialApp(
+        home: Material(
+          child: SelectFKWidget(
+              'Placa Julieta', 'id', [Line('key')], ctlSelect, dataSource),
+        ),
+      ));
+      ctlSelect.obj = {'key': 'ABC1234', 'id': 1};
+      await tester.pump();
+
+      await tester.pumpWidget(MaterialApp(
+        home: Material(
+          child: SelectFKWidget(
+              'Placa Bitrem', 'id', [Line('key')], ctlSelect, dataSource),
+        ),
+      ));
+
+      expect(ctlSelect.obj, {'key': 'ABC1234', 'id': 1});
+      expect(find.text('ABC1234'), findsOneWidget);
+    });
+  });
 }
