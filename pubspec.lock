@@ -578,8 +578,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: timber-cargo-dependency-chain
-      resolved-ref: a2914ebc2a6ff94ea2dff69547d9735474c3f20c
+      ref: dev-26
+      resolved-ref: "76d5036d2ca603496f63efc23c96874cd6a17f82"
       url: "https://github.com/aynova-tecnologia/msk_utils.git"
     source: git
     version: "2.0.2"

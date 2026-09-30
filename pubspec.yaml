@@ -19,7 +19,9 @@ dependencies:
   msk_utils:
     git:
       url: https://github.com/aynova-tecnologia/msk_utils.git
-      ref: timber-cargo-dependency-chain
+      # dev-26 consolidada (contem timber-cargo-dependency-chain + sentry
+      # por app + reporting fail-safe)
+      ref: dev-26
     #path: ../msk_utils
   flutter:
     sdk: flutter
