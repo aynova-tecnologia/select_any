@@ -1,5 +1,8 @@
+import 'dart:async';
+
 // ignore_for_file: unused_element
 
+import 'package:collection/collection.dart';
 import 'package:diacritic/diacritic.dart';
 import 'package:flutter/material.dart';
 import 'package:mobx/mobx.dart';
@@ -9,6 +12,15 @@ import 'package:select_any/src/presentation/widgets/select_range_date/select_ran
 
 part 'select_any_controller.g.dart';
 
+const int _displayModeList = 1;
+const int _displayModeTable = 2;
+const int _firstPage = 1;
+const int _noPaginationOffset = -1;
+const int _initialPaginatedOffset = 0;
+const int _defaultColumnFilterDebounceMs = 800;
+const int _minColumnFilterDebounceMs = 700;
+const int _maxColumnFilterDebounceMs = 1600;
+
 class SelectAnyController = _SelectAnyBase with _$SelectAnyController;
 
 abstract class _SelectAnyBase with Store {
@@ -16,7 +28,8 @@ abstract class _SelectAnyBase with Store {
   @observable
 
   /// 1 = List, 2 = Table
-  int typeDiplay = UtilsPlatform.isMobile ? 1 : 2;
+  int typeDiplay =
+      UtilsPlatform.isMobile ? _displayModeList : _displayModeTable;
   @observable
   String searchText = "";
   String? title;
@@ -40,7 +53,7 @@ abstract class _SelectAnyBase with Store {
 
   SelectModel? selectModel;
   @observable
-  int page = 1;
+  int page = _firstPage;
   @observable
   int total = 0;
   @observable
@@ -68,6 +81,16 @@ abstract class _SelectAnyBase with Store {
   @observable
   bool loadingMore = false;
 
+  /// Indica se os dados exibidos atualmente vieram de um cache local
+  /// (ex: requisição feita sem conexão com a internet)
+  @observable
+  bool isShowingCachedData = false;
+
+  bool _showLoadingSkeleton = true;
+  bool _skipIfUnchangedResults = false;
+  bool _isRefreshing = false;
+  int _requestId = 0;
+
   List<int> get getNumberItemsPerPage => [10, 15, 25, 50];
 
   TypeSearch typeSearch = TypeSearch.CONTAINS;
@@ -87,6 +110,11 @@ abstract class _SelectAnyBase with Store {
   GroupFilterExp? actualFilters;
 
   bool _hasSearchedAlready = false;
+  Timer? _columnFilterDebounce;
+  int _columnFilterSequence = 0;
+
+  bool get showLoadingSkeleton => _showLoadingSkeleton;
+  bool get isRefreshing => _isRefreshing;
 
   _SelectAnyBase({this.dynamicScreen = true});
 
@@ -121,6 +149,7 @@ abstract class _SelectAnyBase with Store {
   }
 
   void dispose() {
+    _columnFilterDebounce?.cancel();
     list.clear();
     filter.clear();
     searchText = '';
@@ -129,14 +158,39 @@ abstract class _SelectAnyBase with Store {
     loaded = false;
     clearFilters(callDataSource: false);
     filterControllers.clear();
+    _showLoadingSkeleton = true;
+    _skipIfUnchangedResults = false;
+    _isRefreshing = false;
   }
 
-  void setDataSource({int? offset, bool refresh = false}) async {
+  /// Versão leve de [dispose], usada quando este controller pertence a quem
+  /// abriu a página (ex: um controller de lista mantido vivo num controller
+  /// de tela pai, reaproveitado entre navegações) — a página que está
+  /// fechando não é dona dos dados carregados, então não faz sentido jogar
+  /// fora `loaded`/`list`/cache do data source só porque o usuário navegou
+  /// pra fora: isso forçava uma consulta nova completa à API toda vez que a
+  /// tela era reaberta, mesmo segundos depois de já ter carregado os dados
+  /// (ver investigação de lentidão/redraw excessivo nas listas de
+  /// movimentação do Timber Track). Só cancela o timer interno de debounce,
+  /// que é de fato específico dessa instância de página.
+  void disposeApenasTimers() {
+    _columnFilterDebounce?.cancel();
+  }
+
+  void setDataSource({
+    int? offset,
+    bool refresh = false,
+    bool silent = false,
+    bool skipIfUnchanged = false,
+  }) async {
+    final int requestId = _startRequest(
+      silent: silent,
+      skipIfUnchanged: skipIfUnchanged,
+    );
     try {
       initializeDataSource();
       GroupFilterExp groupFilterExp = buildFilterExpression();
       showSearch = groupFilterExp.filterExps.isEmpty;
-      loading = true;
       offset ??= (page - 1) * quantityItensPage;
       (await actualDataSource!.getList(quantityItensPage, offset, selectModel,
               data: data,
@@ -144,53 +198,45 @@ abstract class _SelectAnyBase with Store {
               itemSort: itemSort,
               filter: groupFilterExp))
           .listen((event) {
+        if (!_isCurrentRequest(requestId)) {
+          return;
+        }
         error = null;
         if (filter.text.trim().isEmpty) {
-          list.clear();
-
-          /// Não aplica no debug/profile para captura de erros
-          if (UtilsPlatform.isRelease) {
-            event.data = event.data.distinctBy((e) => e.id);
-          }
-          event.data.forEach((item) {
-            bool present = selectedList.any((element) => element.id == item.id);
-            if (item.isSelected == true) {
-              if (!present) {
-                /// Caso o item esteja selecionado e não esteja na lista selectedList
-                selectedList.add(item);
-              }
-            } else {
-              item.isSelected = present;
-            }
-            list.add(item);
-          });
-          list = ObservableList.of(list.sortedBy((e) => e.position!));
-          loading = false;
-          loadingMore = false;
-          loaded = true;
-          total = event.total ?? 0;
-          setDataType();
+          _applyResponseData(event);
         }
       }, onError: (error) {
+        if (!_isCurrentRequest(requestId)) {
+          return;
+        }
         print(error);
-        loading = false;
-        loadingMore = false;
+        _finishRequest();
         this.error = error;
       });
     } catch (error, stackTrace) {
+      if (!_isCurrentRequest(requestId)) {
+        return;
+      }
       UtilsSentry.reportError(error, stackTrace);
       print(error);
-      loading = false;
-      loadingMore = false;
+      _finishRequest();
       this.error = error;
     }
   }
 
-  setDataSourceSearch({int? offset, bool refresh = false}) async {
+  setDataSourceSearch({
+    int? offset,
+    bool refresh = false,
+    bool silent = false,
+    bool skipIfUnchanged = false,
+  }) async {
     showSearch = true;
+    final int requestId = _startRequest(
+      silent: silent,
+      skipIfUnchanged: skipIfUnchanged,
+    );
     try {
       initializeDataSourceAndConfirmData();
-      loading = true;
       String text = removeDiacritics(filter.text.trim()).toLowerCase();
       (await actualDataSource!.getListSearch(text, quantityItensPage,
               offset ?? (page - 1) * quantityItensPage, selectModel,
@@ -199,46 +245,35 @@ abstract class _SelectAnyBase with Store {
               typeSearch: typeSearch,
               itemSort: itemSort))
           .listen((ResponseDataDataSource event) {
+        if (!_isCurrentRequest(requestId)) {
+          return;
+        }
         error = null;
 
         /// Só altera se o texto ainda for idêntico ao pesquisado
         if (removeDiacritics(filter.text.trim()).toLowerCase() == text &&
             text == event.filter) {
-          list.clear();
-
-          /// Não aplica no debug/profile para captura de erros
-          if (UtilsPlatform.isRelease) {
-            event.data = event.data.distinctBy((e) => e.id);
-          }
-          event.data.forEach((item) {
-            bool present = selectedList.any((element) => element.id == item.id);
-            if (item.isSelected == true) {
-              if (!present) {
-                /// Caso o item esteja selecionado e não esteja na lista selectedList
-                selectedList.add(item);
-              }
-            } else {
-              item.isSelected = present;
-            }
-            list.add(item);
-          });
-          list = ObservableList.of(list.sortedBy((e) => e.position!));
-          total = event.total ?? 0;
-          loading =
-              !(removeDiacritics(filter.text.trim()).toLowerCase() == text);
-          loaded = true;
+          _applyResponseData(
+            event,
+            keepLoading:
+                !(removeDiacritics(filter.text.trim()).toLowerCase() == text),
+          );
         }
       }, onError: (error) {
+        if (!_isCurrentRequest(requestId)) {
+          return;
+        }
         print(error);
-        loading = false;
-        loadingMore = false;
+        _finishRequest();
         this.error = error;
       });
     } catch (error, stackTrace) {
+      if (!_isCurrentRequest(requestId)) {
+        return;
+      }
       UtilsSentry.reportError(error, stackTrace);
       print(error);
-      loading = false;
-      loadingMore = false;
+      _finishRequest();
       this.error = error;
     }
   }
@@ -259,11 +294,25 @@ abstract class _SelectAnyBase with Store {
 
   /// Limpa a lista e busca novamente os dados
   /// Usar refresh = false ao atualizar a ordenação da lista
-  reloadData({bool refresh = true}) {
+  reloadData({
+    bool refresh = true,
+    bool silent = false,
+    bool skipIfUnchanged = false,
+  }) {
     /// Não recarrega os dados caso precise de confirmação
     if (!confirmToLoadData) {
-      list.clear();
-      setCorretDataSource(offset: getOffSet, refresh: refresh);
+      /// No mobile o refresh sempre busca a primeira página (ver [getOffSet]),
+      /// então a página armazenada precisa ser realinhada para não pular
+      /// páginas na próxima vez que o scroll infinito buscar mais dados.
+      if (typeDiplay == _displayModeList) {
+        page = _firstPage;
+      }
+      setCorretDataSource(
+        offset: getOffSet,
+        refresh: refresh,
+        silent: silent,
+        skipIfUnchanged: skipIfUnchanged,
+      );
     }
   }
 
@@ -277,7 +326,9 @@ abstract class _SelectAnyBase with Store {
     --total;
   }
 
-  int get getOffSet => typeDiplay == 1 ? -1 : (page - 1) * quantityItensPage;
+  int get getOffSet => typeDiplay == _displayModeList
+      ? _noPaginationOffset
+      : (page - _firstPage) * quantityItensPage;
 
   void export(BuildContext context) {
     showDialog(
@@ -311,8 +362,12 @@ abstract class _SelectAnyBase with Store {
       if (searchText.isEmpty) {
         if (!confirmToLoadData) {
           list.clear();
-          page = 1;
-          setDataSource(offset: typeDiplay == 1 ? -1 : 0);
+          page = _firstPage;
+          setDataSource(
+            offset: typeDiplay == _displayModeList
+                ? _noPaginationOffset
+                : _initialPaginatedOffset,
+          );
         }
       } else {
         /// Usa para guardar o valor original
@@ -324,13 +379,13 @@ abstract class _SelectAnyBase with Store {
           /// Só executa a pesquisa se o input não tiver mudado e já não tenha sido executada
           if (tempSearchText == filter.text.trim() && !_hasSearchedAlready) {
             list.clear();
-            page = 1;
+            page = _firstPage;
             setDataSourceSearch(
                 offset: selectModel!.dataSource.supportPaginate
                     ? null
-                    : typeDiplay == 1
-                        ? -1
-                        : 0);
+                    : typeDiplay == _displayModeList
+                        ? _noPaginationOffset
+                        : _initialPaginatedOffset);
             // Altera para true após fazer a pesquisa evitando que seja feita novamente caso o [onSubmittedSearch] seja chamado e
             //não tenha sido mudado o input [filter.text].
             _hasSearchedAlready = true;
@@ -346,13 +401,13 @@ abstract class _SelectAnyBase with Store {
     if (!_hasSearchedAlready) {
       searchText = filter.text.trim();
       list.clear();
-      page = 1;
+      page = _firstPage;
       setDataSourceSearch(
           offset: selectModel!.dataSource.supportPaginate
               ? null
-              : typeDiplay == 1
-                  ? -1
-                  : 0);
+              : typeDiplay == _displayModeList
+                  ? _noPaginationOffset
+                  : _initialPaginatedOffset);
       // Altera para true após fazer a pesquisa evitando que seja feita novamente caso o [filterChanged]
       //tente fazer a pesquisa após o delay.
       _hasSearchedAlready = true;
@@ -361,7 +416,7 @@ abstract class _SelectAnyBase with Store {
 
   updateTypeSearch(TypeSearch? newType) {
     if (newType != null && newType != typeSearch) {
-      page = 1;
+      page = _firstPage;
       typeSearch = newType;
       if (filter.text.trim().isNotEmpty) {
         filterChanged(reload: true);
@@ -415,11 +470,26 @@ abstract class _SelectAnyBase with Store {
     return actualFilters!;
   }
 
-  setCorretDataSource({int? offset, bool refresh = false}) {
+  setCorretDataSource({
+    int? offset,
+    bool refresh = false,
+    bool silent = false,
+    bool skipIfUnchanged = false,
+  }) {
     if (filter.text.isEmpty) {
-      setDataSource(offset: offset, refresh: refresh);
+      setDataSource(
+        offset: offset,
+        refresh: refresh,
+        silent: silent,
+        skipIfUnchanged: skipIfUnchanged,
+      );
     } else {
-      setDataSourceSearch(offset: offset, refresh: refresh);
+      setDataSourceSearch(
+        offset: offset,
+        refresh: refresh,
+        silent: silent,
+        skipIfUnchanged: skipIfUnchanged,
+      );
     }
   }
 
@@ -442,14 +512,43 @@ abstract class _SelectAnyBase with Store {
   }
 
   onColumnFilterChanged() {
+    _columnFilterDebounce?.cancel();
+    _invalidateActiveRequests();
     resetOnFiltersChanged();
-    setCorretDataSource(offset: getOffSet);
+    final int debounceMilliseconds =
+        (((actualDataSource ?? selectModel?.dataSource)?.searchDelay ??
+                    _defaultColumnFilterDebounceMs) *
+                2)
+            .clamp(
+      _minColumnFilterDebounceMs,
+      _maxColumnFilterDebounceMs,
+    );
+    final int sequence = ++_columnFilterSequence;
+
+    /// Limpa os resultados atuais para não manter uma tabela antiga visível
+    /// enquanto o usuário ainda está digitando o novo filtro da coluna.
+    _columnFilterDebounce = Timer(
+      Duration(milliseconds: debounceMilliseconds),
+      () {
+        if (sequence != _columnFilterSequence) {
+          return;
+        }
+        list.clear();
+        total = 0;
+        loaded = false;
+        _showLoadingSkeleton = true;
+        setCorretDataSource(
+          offset: getOffSet,
+          skipIfUnchanged: true,
+        );
+      },
+    );
   }
 
   /// Limpa o texto da barra de pesquisa e zera a pagina
   resetOnFiltersChanged() {
-    if (page != 1) {
-      page = 1;
+    if (page != _firstPage) {
+      page = _firstPage;
     }
     filter.clear();
   }
@@ -496,5 +595,128 @@ abstract class _SelectAnyBase with Store {
         element.isSelected = newValue;
       }
     });
+  }
+
+  int _startRequest({
+    required bool silent,
+    required bool skipIfUnchanged,
+  }) {
+    _requestId++;
+    _isRefreshing = true;
+    _showLoadingSkeleton = !silent;
+    _skipIfUnchangedResults = skipIfUnchanged;
+    if (!silent) {
+      loading = true;
+    }
+    return _requestId;
+  }
+
+  bool _isCurrentRequest(int requestId) => requestId == _requestId;
+
+  void _invalidateActiveRequests() {
+    _requestId++;
+    loading = false;
+    loadingMore = false;
+    _isRefreshing = false;
+  }
+
+  void _finishRequest({bool keepLoading = false}) {
+    if (!keepLoading) {
+      loading = false;
+    }
+    loadingMore = false;
+    _isRefreshing = false;
+  }
+
+  void _applyResponseData(
+    ResponseDataDataSource event, {
+    bool keepLoading = false,
+  }) {
+    List<ItemSelectTable> items = event.data;
+
+    /// Não aplica no debug/profile para captura de erros
+    if (UtilsPlatform.isRelease) {
+      items = items.distinctBy((e) => e.id).toList();
+    }
+
+    final List<ItemSelectTable> nextItems = items.map((item) {
+      final bool present = selectedList.any((element) => element.id == item.id);
+      if (item.isSelected == true) {
+        if (!present) {
+          selectedList.add(item);
+        }
+      } else {
+        item.isSelected = present;
+      }
+      return item;
+    }).toList();
+
+    /// Quando a busca foi disparada pelo scroll infinito (paginação),
+    /// acrescenta os itens da nova página aos já exibidos ao invés de
+    /// substituir a lista inteira, para o usuário continuar rolando pelos
+    /// itens carregados anteriormente.
+    final bool appendToExisting = loadingMore && page > 1;
+
+    /// Quando é um refresh (pull-to-refresh/botão atualizar) da primeira
+    /// página com uma lista já carregada (possivelmente com várias páginas
+    /// acrescentadas via scroll), atualiza os itens já exibidos no lugar
+    /// ao invés de descartar tudo que não veio nessa página.
+    final bool isRefreshOfLoadedData =
+        !appendToExisting && page <= 1 && list.isNotEmpty;
+
+    List<ItemSelectTable> mergedItems;
+    if (appendToExisting) {
+      mergedItems = [...nextItems, ...list].distinctBy((e) => e.id);
+    } else if (isRefreshOfLoadedData) {
+      final Map<int?, ItemSelectTable> freshById = {
+        for (final item in nextItems) item.id: item
+      };
+      final Set<int?> previousIds = list.map((e) => e.id).toSet();
+      mergedItems = list.map((old) => freshById[old.id] ?? old).toList();
+      mergedItems.addAll(
+        nextItems.where((item) => !previousIds.contains(item.id)),
+      );
+    } else {
+      mergedItems = nextItems;
+    }
+    mergedItems.sort((a, b) => (a.position ?? 0).compareTo(b.position ?? 0));
+    final ObservableList<ItemSelectTable> nextList =
+        ObservableList.of(mergedItems);
+
+    final int nextTotal = event.total ?? 0;
+    final bool changed = !_sameItems(list, nextList) || total != nextTotal;
+
+    isShowingCachedData = event.fromCache;
+
+    if (changed || !_skipIfUnchangedResults) {
+      list = nextList;
+      total = nextTotal;
+      setDataType();
+    }
+
+    loaded = true;
+    _finishRequest(keepLoading: keepLoading);
+  }
+
+  bool _sameItems(
+    List<ItemSelectTable> current,
+    List<ItemSelectTable> next,
+  ) {
+    if (current.length != next.length) {
+      return false;
+    }
+    const DeepCollectionEquality equality = DeepCollectionEquality();
+    for (int index = 0; index < current.length; index++) {
+      final ItemSelectTable currentItem = current[index];
+      final ItemSelectTable nextItem = next[index];
+      if (currentItem.id != nextItem.id ||
+          currentItem.position != nextItem.position ||
+          currentItem.isSelected != nextItem.isSelected ||
+          !equality.equals(currentItem.strings, nextItem.strings) ||
+          !equality.equals(currentItem.object, nextItem.object)) {
+        return false;
+      }
+    }
+    return true;
   }
 }

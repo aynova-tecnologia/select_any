@@ -192,8 +192,8 @@ void main() {
   testWidgets('Test selectFK clean obj', (tester) async {
     SelectFKController ctlSelect = SelectFKController();
     await tester.pumpWidget(MaterialApp(
-      home: Material(
-        child: SingleChildScrollView(
+      home: Scaffold(
+        body: SingleChildScrollView(
           child: SelectFKWidget(
             'title',
             'id',

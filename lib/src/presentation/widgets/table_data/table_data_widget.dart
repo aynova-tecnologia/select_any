@@ -131,6 +131,22 @@ class TableDataWidget extends StatelessWidget {
                           ]);
                         }),
 
+                        if (controller.selectModel!.showRefreshButton)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                splashRadius: 24,
+                                tooltip: 'Atualizar',
+                                onPressed: () {
+                                  controller.reloadData();
+                                },
+                                icon: Icon(Icons.refresh),
+                              ),
+                              SizedBox(width: 8),
+                            ],
+                          ),
+
                         /// fonteDadoAtual pode ser null caso o carregarDados seja false
                         if (controller.actualDataSource?.allowExport == true)
                           Row(
@@ -171,6 +187,10 @@ class TableDataWidget extends StatelessWidget {
           if (controller.error != null) {
             return FailWidget('Houve uma falha ao carregar os dados',
                 error: controller.error);
+          }
+
+          if (controller.loading && controller.showLoadingSkeleton) {
+            return _buildSkeletonTable(context);
           }
 
           /// Codigo para armazenar em variáveis partes do conteúdo
@@ -341,7 +361,8 @@ class TableDataWidget extends StatelessWidget {
                           }))),
                   )
               ]),
-              if (controller.loading) LinearProgressIndicator(),
+              if (controller.loading && controller.showLoadingSkeleton)
+                LinearProgressIndicator(),
               if (!controller.loading && subList.isEmpty)
                 Center(
                     child: Padding(
@@ -585,19 +606,19 @@ class TableDataWidget extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             total > 0
-                                ? SizedBox(
-                                    /// TODO Implementar abordagem com Flexiveis
-                                    width: 30 +
-                                        ((controller.total.toString().length) *
-                                                12)
-                                            .toDouble(),
+                                ? ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      minWidth: 96,
+                                      maxWidth: 160,
+                                    ),
                                     child: Observer(builder: (_) {
                                       return DropdownButtonFormField<int>(
+                                          isExpanded: true,
                                           decoration: const InputDecoration(
                                               border: InputBorder.none,
                                               contentPadding:
-                                                  const EdgeInsets.all(0)),
-                                          icon: SizedBox(),
+                                                  EdgeInsets.all(0)),
+                                          icon: const SizedBox(),
                                           style: controller.selectModel!.theme
                                                   .defaultTextStyle ??
                                               TextStyle(
@@ -617,6 +638,8 @@ class TableDataWidget extends StatelessWidget {
                                                   value: index + 1,
                                                   child: Text(
                                                       '${(controller.quantityItensPage * index) + 1}-${controller.quantityItensPage * (index + 1)}',
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
                                                       style: controller
                                                           .selectModel!
                                                           .theme
@@ -690,6 +713,160 @@ class TableDataWidget extends StatelessWidget {
                 );
               }),
             )),
+      ],
+    );
+  }
+
+  /// Retorna o nome real da coluna de dados na posição [index] do cabeçalho
+  /// do skeleton, ou null quando a posição é de uma coluna auxiliar
+  /// (checkbox de seleção ou ações), que não tem nome de coluna.
+  String? _skeletonColumnName(int index, int totalColumns) {
+    final bool hasCheckboxColumn =
+        controller.selectModel!.typeSelect == TypeSelect.MULTIPLE;
+    final int lineIndex = index - (hasCheckboxColumn ? 1 : 0);
+    final List<Line> lines = controller.selectModel!.lines;
+    if (lineIndex >= 0 && lineIndex < lines.length) {
+      return lines[lineIndex].name;
+    }
+    return null;
+  }
+
+  Widget _buildSkeletonTable(BuildContext context) {
+    final Color baseColor =
+        Theme.of(context).dividerColor.withValues(alpha: 0.18);
+    final Color highlightColor =
+        Theme.of(context).dividerColor.withValues(alpha: 0.10);
+    final int totalColumns = controller.selectModel!.lines.length +
+        (controller.selectModel!.actions?.isNotEmpty == true ? 1 : 0) +
+        (controller.selectModel!.typeSelect == TypeSelect.MULTIPLE ? 1 : 0);
+    return Column(
+      children: [
+        const LinearProgressIndicator(),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  if (controller.showSearch)
+                    Expanded(
+                      child: Container(
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: highlightColor,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                    ),
+                  if (controller.showSearch) const SizedBox(width: 8),
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: baseColor,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  if (controller.selectModel!.showRefreshButton) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: baseColor,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                  ],
+                  if (controller.actualDataSource?.allowExport == true) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: baseColor,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 16),
+              /// Mantém o nome real das colunas visível durante o carregamento,
+              /// apenas o conteúdo das linhas usa o efeito de skeleton abaixo.
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+                color: controller.selectModel!.theme.tableTheme.headerColor ??
+                    baseColor,
+                child: Row(
+                  children: List.generate(
+                    totalColumns,
+                    (index) {
+                      final String? columnName =
+                          _skeletonColumnName(index, totalColumns);
+                      return Expanded(
+                        child: columnName != null
+                            ? Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 6),
+                                child: Text(
+                                  columnName,
+                                  style: controller
+                                      .selectModel!.theme.tableTheme.headerTextStyle,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              )
+                            : Container(
+                                margin:
+                                    const EdgeInsets.symmetric(horizontal: 6),
+                                height: 14,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.35),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              ...List.generate(
+                6,
+                (_) => Container(
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: Theme.of(context)
+                            .dividerColor
+                            .withValues(alpha: 0.35),
+                      ),
+                    ),
+                  ),
+                  child: Row(
+                    children: List.generate(
+                      totalColumns,
+                      (index) => Expanded(
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 6),
+                          height: 14,
+                          decoration: BoxDecoration(
+                            color: index == 0 ? baseColor : highlightColor,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }

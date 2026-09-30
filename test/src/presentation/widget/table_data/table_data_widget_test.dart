@@ -41,3 +41,8 @@
 //   //   expect(find.byType(Card), findsNothing);
 //   // });
 // }
+
+// This file has no live tests (everything above is commented out from
+// before this repo was vendored). An empty main() keeps it loadable by
+// `flutter test` without deleting the historical commented-out content.
+void main() {}

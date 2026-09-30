@@ -19,6 +19,7 @@ dependencies:
   msk_utils:
     git:
       url: https://github.com/aynova-tecnologia/msk_utils.git
+      ref: timber-cargo-dependency-chain
     #path: ../msk_utils
   flutter:
     sdk: flutter
