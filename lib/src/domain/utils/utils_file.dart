@@ -130,7 +130,7 @@ class UtilsFileSelect {
         'explorer.exe',
         args: ['$directoryPath'],
       );
-    } else if (Platform.isMacOS) {
+    } else if (UtilsPlatform.isMacos) {
       await UtilsPlatform.openProcess('open', args: ['$directoryPath']);
     } else if (UtilsPlatform.isMobile) {
       // Convertendo o caminho do arquivo para XFile
